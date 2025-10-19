@@ -1,12 +1,5 @@
-import { NativeModule, requireNativeModule } from 'expo';
+import { requireNativeModule } from 'expo-modules-core';
 
-import { ExpoThemeChangerModuleEvents } from './ExpoThemeChanger.types';
-
-declare class ExpoThemeChangerModule extends NativeModule<ExpoThemeChangerModuleEvents> {
-  PI: number;
-  hello(): string;
-  setValueAsync(value: string): Promise<void>;
-}
-
-// This call loads the native module object from the JSI.
-export default requireNativeModule<ExpoThemeChangerModule>('ExpoThemeChanger');
+// It loads the native module object from the JSI or falls back to
+// the bridge module (from NativeModulesProxy) if the remote debugger is on.
+export default requireNativeModule('ExpoThemeChanger');

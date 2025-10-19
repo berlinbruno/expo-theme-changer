@@ -1,73 +1,68 @@
-import { useEvent } from 'expo';
-import ExpoThemeChanger, { ExpoThemeChangerView } from 'expo-theme-changer';
-import { Button, SafeAreaView, ScrollView, Text, View } from 'react-native';
+import * as ThemeChanger from "expo-theme-changer";
+import { useEffect, useState } from "react";
+import { Button, Text, View, StyleSheet } from "react-native";
 
 export default function App() {
-  const onChangePayload = useEvent(ExpoThemeChanger, 'onChange');
+  const [themeSetting, setThemeSetting] = useState<string>(ThemeChanger.getTheme());
+  const [effectiveTheme, setEffectiveTheme] = useState<string>(ThemeChanger.getEffectiveTheme());
+  const [systemTheme, setSystemTheme] = useState<string>(ThemeChanger.getSystemTheme());
+
+  useEffect(() => {
+    const subscription = ThemeChanger.addThemeListener(({ theme, effectiveTheme: newEffective }) => {
+      setThemeSetting(theme);
+      setEffectiveTheme(newEffective);
+      setSystemTheme(ThemeChanger.getSystemTheme());
+    });
+
+    return () => subscription.remove();
+  }, []);
+
+  const cycleTheme = () => {
+    const themes: Array<"light" | "dark" | "system"> = ["light", "dark", "system"];
+    const currentIndex = themes.indexOf(themeSetting as any);
+    const nextIndex = (currentIndex + 1) % themes.length;
+    ThemeChanger.setTheme(themes[nextIndex]);
+  };
+
+  const isDark = effectiveTheme === "dark";
 
   return (
-    <SafeAreaView style={styles.container}>
-      <ScrollView style={styles.container}>
-        <Text style={styles.header}>Module API Example</Text>
-        <Group name="Constants">
-          <Text>{ExpoThemeChanger.PI}</Text>
-        </Group>
-        <Group name="Functions">
-          <Text>{ExpoThemeChanger.hello()}</Text>
-        </Group>
-        <Group name="Async functions">
-          <Button
-            title="Set value"
-            onPress={async () => {
-              await ExpoThemeChanger.setValueAsync('Hello from JS!');
-            }}
-          />
-        </Group>
-        <Group name="Events">
-          <Text>{onChangePayload?.value}</Text>
-        </Group>
-        <Group name="Views">
-          <ExpoThemeChangerView
-            url="https://www.example.com"
-            onLoad={({ nativeEvent: { url } }) => console.log(`Loaded: ${url}`)}
-            style={styles.view}
-          />
-        </Group>
-      </ScrollView>
-    </SafeAreaView>
-  );
-}
-
-function Group(props: { name: string; children: React.ReactNode }) {
-  return (
-    <View style={styles.group}>
-      <Text style={styles.groupHeader}>{props.name}</Text>
-      {props.children}
+    <View
+      style={[
+        styles.container,
+        { backgroundColor: isDark ? "#000" : "#fff" },
+      ]}
+    >
+      <Text style={[styles.text, { color: isDark ? "#fff" : "#000" }]}>
+        Theme Setting: {themeSetting}
+      </Text>
+      <Text style={[styles.subText, { color: isDark ? "#ccc" : "#666" }]}>
+        Effective Theme: {effectiveTheme}
+      </Text>
+      <Text style={[styles.subText, { color: isDark ? "#ccc" : "#666" }]}>
+        System Theme: {systemTheme}
+      </Text>
+      <Button
+        title={`Switch to ${themeSetting === "light" ? "dark" : themeSetting === "dark" ? "system" : "light"}`}
+        onPress={cycleTheme}
+      />
     </View>
   );
 }
 
-const styles = {
-  header: {
-    fontSize: 30,
-    margin: 20,
-  },
-  groupHeader: {
-    fontSize: 20,
-    marginBottom: 20,
-  },
-  group: {
-    margin: 20,
-    backgroundColor: '#fff',
-    borderRadius: 10,
-    padding: 20,
-  },
+const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#eee',
+    alignItems: "center",
+    justifyContent: "center",
   },
-  view: {
-    flex: 1,
-    height: 200,
+  text: {
+    fontSize: 20,
+    fontWeight: "bold",
+    marginBottom: 8,
   },
-};
+  subText: {
+    fontSize: 14,
+    marginBottom: 4,
+  },
+});

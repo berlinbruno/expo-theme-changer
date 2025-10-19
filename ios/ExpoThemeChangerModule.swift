@@ -1,48 +1,122 @@
 import ExpoModulesCore
+import UIKit
 
 public class ExpoThemeChangerModule: Module {
-  // Each module class must implement the definition function. The definition consists of components
-  // that describes the module's functionality and behavior.
-  // See https://docs.expo.dev/modules/module-api for more details about available components.
+  private var lastSystemTheme: String?
+  
   public func definition() -> ModuleDefinition {
-    // Sets the name of the module that JavaScript code will use to refer to the module. Takes a string as an argument.
-    // Can be inferred from module's class name, but it's recommended to set it explicitly for clarity.
-    // The module will be accessible from `requireNativeModule('ExpoThemeChanger')` in JavaScript.
     Name("ExpoThemeChanger")
 
-    // Defines constant property on the module.
-    Constant("PI") {
-      Double.pi
+    Events("onChangeTheme")
+
+    OnCreate {
+      self.lastSystemTheme = self.getCurrentSystemTheme()
+      self.startObservingTraitChanges()
     }
 
-    // Defines event names that the module can send to JavaScript.
-    Events("onChange")
-
-    // Defines a JavaScript synchronous function that runs the native code on the JavaScript thread.
-    Function("hello") {
-      return "Hello world! 👋"
+    OnDestroy {
+      self.stopObservingTraitChanges()
+      self.lastSystemTheme = nil
     }
 
-    // Defines a JavaScript function that always returns a Promise and whose native code
-    // is by default dispatched on the different thread than the JavaScript runtime runs on.
-    AsyncFunction("setValueAsync") { (value: String) in
-      // Send an event to JavaScript.
-      self.sendEvent("onChange", [
-        "value": value
+    OnAppEntersForeground {
+      self.checkSystemThemeChange()
+    }
+
+    Function("setTheme") { (theme: String) -> Void in
+      // Validate theme value
+      let validThemes = ["light", "dark", "system"]
+      guard validThemes.contains(theme) else {
+        throw NSError(domain: "ExpoThemeChanger", code: 1, 
+                     userInfo: [NSLocalizedDescriptionKey: "Theme must be 'light', 'dark', or 'system'"])
+      }
+      
+      UserDefaults.standard.set(theme, forKey: "theme")
+      self.sendEvent("onChangeTheme", [
+        "theme": theme,
+        "effectiveTheme": self.getEffectiveTheme(theme: theme)
       ])
     }
+    
+    Function("getTheme") { () -> String in
+      UserDefaults.standard.string(forKey: "theme") ?? "system"
+    }
 
-    // Enables the module to be used as a native view. Definition components that are accepted as part of the
-    // view definition: Prop, Events.
-    View(ExpoThemeChangerView.self) {
-      // Defines a setter for the `url` prop.
-      Prop("url") { (view: ExpoThemeChangerView, url: URL) in
-        if view.webView.url != url {
-          view.webView.load(URLRequest(url: url))
+    Function("getEffectiveTheme") { () -> String in
+      let savedTheme = UserDefaults.standard.string(forKey: "theme") ?? "system"
+      return self.getEffectiveTheme(theme: savedTheme)
+    }
+
+    Function("getSystemTheme") { () -> String in
+      return self.getCurrentSystemTheme()
+    }
+  }
+
+  private func getCurrentSystemTheme() -> String {
+    if #available(iOS 13.0, *) {
+      // Get the key window's trait collection for accurate theme detection
+      if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+         let window = windowScene.windows.first {
+        switch window.traitCollection.userInterfaceStyle {
+        case .dark:
+          return "dark"
+        case .light:
+          return "light"
+        default:
+          return "light"
         }
       }
+      // Fallback to UITraitCollection.current
+      switch UITraitCollection.current.userInterfaceStyle {
+      case .dark:
+        return "dark"
+      case .light:
+        return "light"
+      default:
+        return "light"
+      }
+    } else {
+      return "light"
+    }
+  }
 
-      Events("onLoad")
+  private func getEffectiveTheme(theme: String) -> String {
+    if theme == "system" {
+      return getCurrentSystemTheme()
+    } else {
+      return theme
+    }
+  }
+
+  private func startObservingTraitChanges() {
+    if #available(iOS 13.0, *) {
+      NotificationCenter.default.addObserver(
+        forName: UIScene.didActivateNotification,
+        object: nil,
+        queue: .main
+      ) { [weak self] _ in
+        self?.checkSystemThemeChange()
+      }
+    }
+  }
+
+  private func stopObservingTraitChanges() {
+    NotificationCenter.default.removeObserver(self)
+  }
+
+  private func checkSystemThemeChange() {
+    let currentSystemTheme = getCurrentSystemTheme()
+    let savedTheme = UserDefaults.standard.string(forKey: "theme") ?? "system"
+    
+    // Only emit event if theme is set to "system" and system theme actually changed
+    if savedTheme == "system" && lastSystemTheme != currentSystemTheme {
+      lastSystemTheme = currentSystemTheme
+      sendEvent("onChangeTheme", [
+        "theme": "system",
+        "effectiveTheme": currentSystemTheme
+      ])
+    } else {
+      lastSystemTheme = currentSystemTheme
     }
   }
 }

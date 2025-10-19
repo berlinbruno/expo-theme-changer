@@ -1,50 +1,129 @@
 package expo.modules.themechanger
 
+import android.content.Context
+import android.content.res.Configuration
+import androidx.core.os.bundleOf
+import android.content.SharedPreferences
+import android.content.ComponentCallbacks2
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
-import java.net.URL
 
 class ExpoThemeChangerModule : Module() {
-  // Each module class must implement the definition function. The definition consists of components
-  // that describes the module's functionality and behavior.
-  // See https://docs.expo.dev/modules/module-api for more details about available components.
+  private var lastSystemTheme: String? = null
+  private var configCallback: ComponentCallbacks2? = null
+
   override fun definition() = ModuleDefinition {
-    // Sets the name of the module that JavaScript code will use to refer to the module. Takes a string as an argument.
-    // Can be inferred from module's class name, but it's recommended to set it explicitly for clarity.
-    // The module will be accessible from `requireNativeModule('ExpoThemeChanger')` in JavaScript.
     Name("ExpoThemeChanger")
 
-    // Defines constant property on the module.
-    Constant("PI") {
-      Math.PI
+    Events("onChangeTheme")
+
+    OnCreate {
+      lastSystemTheme = getCurrentSystemTheme()
+      registerConfigurationCallback()
     }
 
-    // Defines event names that the module can send to JavaScript.
-    Events("onChange")
-
-    // Defines a JavaScript synchronous function that runs the native code on the JavaScript thread.
-    Function("hello") {
-      "Hello world! 👋"
+    OnDestroy {
+      unregisterConfigurationCallback()
+      lastSystemTheme = null
     }
 
-    // Defines a JavaScript function that always returns a Promise and whose native code
-    // is by default dispatched on the different thread than the JavaScript runtime runs on.
-    AsyncFunction("setValueAsync") { value: String ->
-      // Send an event to JavaScript.
-      sendEvent("onChange", mapOf(
-        "value" to value
+    OnActivityEntersForeground {
+      // Check if system theme changed while app was in background
+      checkSystemThemeChange()
+    }
+
+    Function("setTheme") { theme: String ->
+      // Validate theme value
+      if (theme !in listOf("light", "dark", "system")) {
+        throw IllegalArgumentException("Theme must be 'light', 'dark', or 'system'")
+      }
+      
+      getPreferences().edit().putString("theme", theme).apply()
+      this@ExpoThemeChangerModule.sendEvent("onChangeTheme", bundleOf(
+        "theme" to theme,
+        "effectiveTheme" to getEffectiveTheme(theme)
       ))
     }
 
-    // Enables the module to be used as a native view. Definition components that are accepted as part of
-    // the view definition: Prop, Events.
-    View(ExpoThemeChangerView::class) {
-      // Defines a setter for the `url` prop.
-      Prop("url") { view: ExpoThemeChangerView, url: URL ->
-        view.webView.loadUrl(url.toString())
+    Function("getTheme") {
+      return@Function getPreferences().getString("theme", "system")
+    }
+
+    Function("getEffectiveTheme") {
+      val savedTheme = getPreferences().getString("theme", "system") ?: "system"
+      return@Function getEffectiveTheme(savedTheme)
+    }
+
+    Function("getSystemTheme") {
+      return@Function getCurrentSystemTheme()
+    }
+  }
+
+  private val context
+    get() = requireNotNull(appContext.reactContext)
+
+  private fun getPreferences(): SharedPreferences {
+    return context.getSharedPreferences(context.packageName + ".settings", Context.MODE_PRIVATE)
+  }
+
+  private fun getCurrentSystemTheme(): String {
+    val nightModeFlags = context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK
+    return when (nightModeFlags) {
+      Configuration.UI_MODE_NIGHT_YES -> "dark"
+      Configuration.UI_MODE_NIGHT_NO -> "light"
+      else -> "light"
+    }
+  }
+
+  private fun getEffectiveTheme(theme: String): String {
+    return if (theme == "system") {
+      getCurrentSystemTheme()
+    } else {
+      theme
+    }
+  }
+
+  private fun registerConfigurationCallback() {
+    configCallback = object : ComponentCallbacks2 {
+      override fun onConfigurationChanged(newConfig: Configuration) {
+        checkSystemThemeChange()
       }
-      // Defines an event that the view can send to JavaScript.
-      Events("onLoad")
+
+      override fun onLowMemory() {}
+      override fun onTrimMemory(level: Int) {}
+    }
+    
+    try {
+      context.registerComponentCallbacks(configCallback)
+    } catch (e: Exception) {
+      // Context might not be ready yet
+    }
+  }
+
+  private fun unregisterConfigurationCallback() {
+    configCallback?.let {
+      try {
+        context.unregisterComponentCallbacks(it)
+      } catch (e: Exception) {
+        // Context might already be destroyed
+      }
+    }
+    configCallback = null
+  }
+
+  private fun checkSystemThemeChange() {
+    val currentSystemTheme = getCurrentSystemTheme()
+    val savedTheme = getPreferences().getString("theme", "system") ?: "system"
+    
+    // Only emit event if theme is set to "system" and system theme actually changed
+    if (savedTheme == "system" && lastSystemTheme != currentSystemTheme) {
+      lastSystemTheme = currentSystemTheme
+      this@ExpoThemeChangerModule.sendEvent("onChangeTheme", bundleOf(
+        "theme" to "system",
+        "effectiveTheme" to currentSystemTheme
+      ))
+    } else {
+      lastSystemTheme = currentSystemTheme
     }
   }
 }
