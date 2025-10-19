@@ -1,7 +1,7 @@
 {
   "name": "expo-theme-changer",
   "version": "0.1.0",
-  "description": "My new module",
+  "description": "A powerful and easy-to-use Expo module for managing app themes with support for light, dark, and system-based themes. Automatically detects and responds to system theme changes in real-time.",
   "main": "build/index.js",
   "types": "build/index.d.ts",
   "scripts": {
